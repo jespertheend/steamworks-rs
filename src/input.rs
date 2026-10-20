@@ -1,5 +1,8 @@
 use sys::InputHandle_t;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use super::*;
 
 /// Access to the steam input interface
@@ -24,6 +27,31 @@ pub enum InputType {
     PS3Controller,
     PS5Controller,
     SteamDeckController,
+}
+
+/// Size of the png returned by [`Input::get_glyph_png_for_action_origin`]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GlyphSize {
+    Small,
+    Medium,
+    Large,
+}
+
+bitflags! {
+    /// Style of the glyphs returned by [`Input::get_glyph_png_for_action_origin`]
+    /// and [`Input::get_glyph_svg_for_action_origin`]
+    ///
+    /// The base styles (Knockout, Light, Dark) can not be combined with each other.
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+    #[repr(C)]
+    #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
+    pub struct GlyphStyle: u32 {
+        const KNOCKOUT          = 0x0;
+        const LIGHT             = 0x1;
+        const DARK              = 0x2;
+        const NEUTRAL_COLOR_ABXY = 0x10;
+        const SOLID_ABXY        = 0x20;
+    }
 }
 
 impl Input {
@@ -123,6 +151,47 @@ impl Input {
         unsafe {
             let glyph_path =
                 sys::SteamAPI_ISteamInput_GetGlyphForActionOrigin_Legacy(self.input, action_origin);
+            let glyph_path = CStr::from_ptr(glyph_path);
+            glyph_path.to_string_lossy().into_owned()
+        }
+    }
+
+    /// Get a local path to a PNG file for the provided origin's glyph
+    pub fn get_glyph_png_for_action_origin(
+        &self,
+        action_origin: sys::EInputActionOrigin,
+        size: GlyphSize,
+        glyph_style: GlyphStyle,
+    ) -> String {
+        unsafe {
+            let size = match size {
+                GlyphSize::Small => sys::ESteamInputGlyphSize::k_ESteamInputGlyphSize_Small,
+                GlyphSize::Medium => sys::ESteamInputGlyphSize::k_ESteamInputGlyphSize_Medium,
+                GlyphSize::Large => sys::ESteamInputGlyphSize::k_ESteamInputGlyphSize_Large,
+            };
+            let glyph_path = sys::SteamAPI_ISteamInput_GetGlyphPNGForActionOrigin(
+                self.input,
+                action_origin,
+                size,
+                glyph_style.bits(),
+            );
+            let glyph_path = CStr::from_ptr(glyph_path);
+            glyph_path.to_string_lossy().into_owned()
+        }
+    }
+
+    /// Get a local path to an SVG file for the provided origin's glyph
+    pub fn get_glyph_svg_for_action_origin(
+        &self,
+        action_origin: sys::EInputActionOrigin,
+        glyph_style: GlyphStyle,
+    ) -> String {
+        unsafe {
+            let glyph_path = sys::SteamAPI_ISteamInput_GetGlyphSVGForActionOrigin(
+                self.input,
+                action_origin,
+                glyph_style.bits(),
+            );
             let glyph_path = CStr::from_ptr(glyph_path);
             glyph_path.to_string_lossy().into_owned()
         }
