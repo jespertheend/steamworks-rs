@@ -54,6 +54,18 @@ bitflags! {
     }
 }
 
+// Steam can return windows style separators in glyph paths,
+// which are broken as-is on non-windows platforms
+#[cfg(not(target_os = "windows"))]
+fn normalize_glyph_path(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+#[cfg(target_os = "windows")]
+fn normalize_glyph_path(path: &str) -> String {
+    path.to_owned()
+}
+
 impl Input {
     /// Init must be called when starting use of this interface.
     /// if explicitly_call_run_frame is called then you will need to manually call RunFrame
@@ -152,7 +164,7 @@ impl Input {
             let glyph_path =
                 sys::SteamAPI_ISteamInput_GetGlyphForActionOrigin_Legacy(self.input, action_origin);
             let glyph_path = CStr::from_ptr(glyph_path);
-            glyph_path.to_string_lossy().into_owned()
+            normalize_glyph_path(&glyph_path.to_string_lossy())
         }
     }
 
@@ -176,7 +188,7 @@ impl Input {
                 glyph_style.bits(),
             );
             let glyph_path = CStr::from_ptr(glyph_path);
-            glyph_path.to_string_lossy().into_owned()
+            normalize_glyph_path(&glyph_path.to_string_lossy())
         }
     }
 
@@ -193,7 +205,7 @@ impl Input {
                 glyph_style.bits(),
             );
             let glyph_path = CStr::from_ptr(glyph_path);
-            glyph_path.to_string_lossy().into_owned()
+            normalize_glyph_path(&glyph_path.to_string_lossy())
         }
     }
 
@@ -313,5 +325,18 @@ impl Input {
         unsafe {
             sys::SteamAPI_ISteamInput_Shutdown(self.input);
         }
+    }
+}
+
+#[cfg(all(test, not(target_os = "windows")))]
+mod tests {
+    use super::normalize_glyph_path;
+
+    #[test]
+    fn glyph_path_backslashes_are_replaced() {
+        assert_eq!(
+            normalize_glyph_path(r"\controller_base\images\api\light/a.png"),
+            "/controller_base/images/api/light/a.png"
+        );
     }
 }
