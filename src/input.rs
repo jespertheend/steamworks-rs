@@ -11,6 +11,10 @@ pub struct Input {
     pub(crate) _inner: Arc<Inner>,
 }
 
+/// The type of an input device, as returned by [`Input::get_input_type_for_handle`]
+/// and in the [`SteamInputGamepadSlotChange`] callback.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum InputType {
     Unknown,
     SteamController,
@@ -27,6 +31,32 @@ pub enum InputType {
     PS3Controller,
     PS5Controller,
     SteamDeckController,
+}
+
+impl From<sys::ESteamInputType> for InputType {
+    fn from(input_type: sys::ESteamInputType) -> Self {
+        match input_type {
+            sys::ESteamInputType::k_ESteamInputType_SteamController => Self::SteamController,
+            sys::ESteamInputType::k_ESteamInputType_GenericGamepad => Self::GenericGamepad,
+            sys::ESteamInputType::k_ESteamInputType_PS4Controller => Self::PS4Controller,
+            sys::ESteamInputType::k_ESteamInputType_SwitchJoyConPair => Self::SwitchJoyConPair,
+            sys::ESteamInputType::k_ESteamInputType_MobileTouch => Self::MobileTouch,
+            sys::ESteamInputType::k_ESteamInputType_PS3Controller => Self::PS3Controller,
+            sys::ESteamInputType::k_ESteamInputType_PS5Controller => Self::PS5Controller,
+            sys::ESteamInputType::k_ESteamInputType_XBox360Controller => Self::XBox360Controller,
+            sys::ESteamInputType::k_ESteamInputType_XBoxOneController => Self::XBoxOneController,
+            sys::ESteamInputType::k_ESteamInputType_AppleMFiController => Self::AppleMFiController,
+            sys::ESteamInputType::k_ESteamInputType_AndroidController => Self::AndroidController,
+            sys::ESteamInputType::k_ESteamInputType_SwitchJoyConSingle => Self::SwitchJoyConSingle,
+            sys::ESteamInputType::k_ESteamInputType_SwitchProController => {
+                Self::SwitchProController
+            }
+            sys::ESteamInputType::k_ESteamInputType_SteamDeckController => {
+                Self::SteamDeckController
+            }
+            _ => Self::Unknown,
+        }
+    }
 }
 
 /// Size of the png returned by [`Input::get_glyph_png_for_action_origin`]
@@ -83,6 +113,13 @@ impl Input {
         unsafe { sys::SteamAPI_ISteamInput_RunFrame(self.input, false) }
     }
 
+    /// Enables the [`SteamInputDeviceConnected`] and [`SteamInputDeviceDisconnected`] callbacks.
+    /// Each controller that is already connected will generate a device connected
+    /// callback once enabled.
+    pub fn enable_device_callbacks(&self) {
+        unsafe { sys::SteamAPI_ISteamInput_EnableDeviceCallbacks(self.input) }
+    }
+
     /// Returns a list of the currently connected controllers
     pub fn get_connected_controllers(&self) -> Vec<sys::InputHandle_t> {
         let mut handles = vec![0_u64; sys::STEAM_INPUT_MAX_COUNT as usize];
@@ -125,37 +162,7 @@ impl Input {
         let input_type: sys::ESteamInputType =
             unsafe { sys::SteamAPI_ISteamInput_GetInputTypeForHandle(self.input, input_handle) };
 
-        match input_type {
-            sys::ESteamInputType::k_ESteamInputType_SteamController => InputType::SteamController,
-            sys::ESteamInputType::k_ESteamInputType_GenericGamepad => InputType::GenericGamepad,
-            sys::ESteamInputType::k_ESteamInputType_PS4Controller => InputType::PS4Controller,
-            sys::ESteamInputType::k_ESteamInputType_SwitchJoyConPair => InputType::SwitchJoyConPair,
-            sys::ESteamInputType::k_ESteamInputType_MobileTouch => InputType::MobileTouch,
-            sys::ESteamInputType::k_ESteamInputType_PS3Controller => InputType::PS3Controller,
-            sys::ESteamInputType::k_ESteamInputType_PS5Controller => InputType::PS5Controller,
-            sys::ESteamInputType::k_ESteamInputType_XBox360Controller => {
-                InputType::XBox360Controller
-            }
-            sys::ESteamInputType::k_ESteamInputType_XBoxOneController => {
-                InputType::XBoxOneController
-            }
-            sys::ESteamInputType::k_ESteamInputType_AppleMFiController => {
-                InputType::AppleMFiController
-            }
-            sys::ESteamInputType::k_ESteamInputType_AndroidController => {
-                InputType::AndroidController
-            }
-            sys::ESteamInputType::k_ESteamInputType_SwitchJoyConSingle => {
-                InputType::SwitchJoyConSingle
-            }
-            sys::ESteamInputType::k_ESteamInputType_SwitchProController => {
-                InputType::SwitchProController
-            }
-            sys::ESteamInputType::k_ESteamInputType_SteamDeckController => {
-                InputType::SteamDeckController
-            }
-            _ => InputType::Unknown,
-        }
+        input_type.into()
     }
 
     /// Returns the glyph for an input action
@@ -327,6 +334,93 @@ impl Input {
         }
     }
 }
+
+/// Called when a controller configuration is loaded for a device.
+///
+/// Note: these callbacks will always fire if you have a handler,
+/// but only while the Steam Input interface is active.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct SteamInputConfigurationLoaded {
+    pub app_id: AppId,
+    pub device_handle: InputHandle_t,
+    /// May differ from the local user when using an unmodified community or official config.
+    pub mapping_creator: SteamId,
+    pub major_revision: u32,
+    pub minor_revision: u32,
+    pub uses_steam_input_api: bool,
+    pub uses_gamepad_api: bool,
+}
+
+impl_callback!(cb: SteamInputConfigurationLoaded_t => SteamInputConfigurationLoaded {
+    Self {
+        app_id: AppId(cb.m_unAppID),
+        device_handle: cb.m_ulDeviceHandle,
+        mapping_creator: SteamId(cb.m_ulMappingCreator.m_steamid.m_unAll64Bits),
+        major_revision: cb.m_unMajorRevision,
+        minor_revision: cb.m_unMinorRevision,
+        uses_steam_input_api: cb.m_bUsesSteamInputAPI,
+        uses_gamepad_api: cb.m_bUsesGamepadAPI,
+    }
+});
+
+/// Called when a controller is connected.
+///
+/// Requires [`Input::enable_device_callbacks`] to be called first. Each
+/// controller that is already connected will generate this callback once
+/// enabled.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct SteamInputDeviceConnected {
+    pub device_handle: InputHandle_t,
+}
+
+impl_callback!(cb: SteamInputDeviceConnected_t => SteamInputDeviceConnected {
+    Self {
+        device_handle: cb.m_ulConnectedDeviceHandle,
+    }
+});
+
+/// Called when a controller is disconnected.
+///
+/// Requires [`Input::enable_device_callbacks`] to be called first.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct SteamInputDeviceDisconnected {
+    pub device_handle: InputHandle_t,
+}
+
+impl_callback!(cb: SteamInputDeviceDisconnected_t => SteamInputDeviceDisconnected {
+    Self {
+        device_handle: cb.m_ulDisconnectedDeviceHandle,
+    }
+});
+
+/// Called when the gamepad slot of a controller changes, e.g. on first input
+/// for a device using gamepad emulation, or when the user changes the order
+/// via the Steam overlay. Can be used to change out glyph sets without
+/// making additional API calls.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct SteamInputGamepadSlotChange {
+    pub app_id: AppId,
+    pub device_handle: InputHandle_t,
+    pub device_type: InputType,
+    /// Previous gamepad slot, or -1 if the controller doesn't use gamepad bindings.
+    pub old_gamepad_slot: i32,
+    /// New gamepad slot, or -1 if the controller doesn't use gamepad bindings.
+    pub new_gamepad_slot: i32,
+}
+
+impl_callback!(cb: SteamInputGamepadSlotChange_t => SteamInputGamepadSlotChange {
+    Self {
+        app_id: AppId(cb.m_unAppID),
+        device_handle: cb.m_ulDeviceHandle,
+        device_type: cb.m_eDeviceType.into(),
+        old_gamepad_slot: cb.m_nOldGamepadSlot,
+        new_gamepad_slot: cb.m_nNewGamepadSlot,
+    }
+});
 
 #[cfg(all(test, not(target_os = "windows")))]
 mod tests {

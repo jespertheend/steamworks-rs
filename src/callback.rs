@@ -35,6 +35,10 @@ pub enum CallbackResult {
     RemotePlayDisconnected(RemotePlayDisconnected),
     ScreenshotRequested(ScreenshotRequested),
     ScreenshotReady(ScreenshotReady),
+    SteamInputConfigurationLoaded(SteamInputConfigurationLoaded),
+    SteamInputDeviceConnected(SteamInputDeviceConnected),
+    SteamInputDeviceDisconnected(SteamInputDeviceDisconnected),
+    SteamInputGamepadSlotChange(SteamInputGamepadSlotChange),
     SteamServerConnectFailure(SteamServerConnectFailure),
     SteamServersConnected(SteamServersConnected),
     SteamServersDisconnected(SteamServersDisconnected),
@@ -91,6 +95,18 @@ impl CallbackResult {
             }
             RemotePlayDisconnected::ID => {
                 Self::RemotePlayDisconnected(RemotePlayDisconnected::from_raw(data))
+            }
+            SteamInputConfigurationLoaded::ID => {
+                Self::SteamInputConfigurationLoaded(SteamInputConfigurationLoaded::from_raw(data))
+            }
+            SteamInputDeviceConnected::ID => {
+                Self::SteamInputDeviceConnected(SteamInputDeviceConnected::from_raw(data))
+            }
+            SteamInputDeviceDisconnected::ID => {
+                Self::SteamInputDeviceDisconnected(SteamInputDeviceDisconnected::from_raw(data))
+            }
+            SteamInputGamepadSlotChange::ID => {
+                Self::SteamInputGamepadSlotChange(SteamInputGamepadSlotChange::from_raw(data))
             }
             SteamServerConnectFailure::ID => {
                 Self::SteamServerConnectFailure(SteamServerConnectFailure::from_raw(data))
